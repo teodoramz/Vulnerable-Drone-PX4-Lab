@@ -1,56 +1,62 @@
-
-!.env.example
-!services/sensor/tests/fixtures/*.pcap
-# Playwright MCP scratch output
-# Playwright MCP scratch, when a sync drops it on a remote host.
-# Reference captures used to validate IDS rules ARE committed.
-# Rotating packet captures written by the sensor (bounded by
-# Screenshots from browser-driven verification runs.
-# pytest caches
-# suricata.yaml pcap-log limit/max-files). Never committed.
-# ── Editor / OS ──────────────────────────────────────────
-# ── Local agent config (never commit) ────────────────────
-# ── Node / frontend ──────────────────────────────────────
-# ── PX4 firmware (cloned/compiled at runtime, do not commit) ─
-# ── Packet captures (SIEM/sniffer artifacts) ─────────────
 # ── Python ───────────────────────────────────────────────
-# ── Secrets / env ────────────────────────────────────────
-# ── Sensor runtime artifacts ─────────────────────────────
-**/.claude/
-*.db
+__pycache__/
+*.py[cod]
 *.egg-info/
+.venv/
+.venv-*/
+venv/
+# pytest caches
+.pytest_cache/
+.mypy_cache/
+*.db
+*.sqlite3
+
+# ── Node / frontend ──────────────────────────────────────
+node_modules/
+npm-debug.log*
+services/frontend/dist/
+.vite/
+*.tsbuildinfo
+
+# ── Secrets / env ────────────────────────────────────────
+.env
+.env.*
 *.env
+!.env.example
+
+# ── PX4 firmware (cloned/compiled at runtime, do not commit) ─
+PX4-Autopilot/
+services/drone/PX4-Autopilot/
+
+# ── Packet captures (SIEM/sniffer artifacts) ─────────────
 *.pcap
 *.pcap[0-9]*
 *.pcapng
-*.py[cod]
-*.sqlite3
-*.swp
-*.tsbuildinfo
-.DS_Store
-.claude/
-.env
-.env.*
-.idea/
-.mypy_cache/
-.playwright-mcp/
-.pytest_cache/
-.venv-*/
-.venv/
-.vite/
-.vscode/
-/*.png
-CLAUDE.local.md
-PX4-Autopilot/
-__pycache__/
-captures/
 eve.json
-node_modules/
-npm-debug.log*
-services/drone/PX4-Autopilot/
-services/frontend/dist/
+# Reference captures used to validate IDS rules ARE committed.
+!services/sensor/tests/fixtures/*.pcap
+
+# ── Sensor runtime artifacts ─────────────────────────────
+# Rotating packet captures written by the sensor (bounded by
+# suricata.yaml pcap-log limit/max-files). Never committed.
+captures/
 services/sensor/logs/
-venv/
+
+# ── Editor / OS ──────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ── Local agent config (never commit) ────────────────────
+.claude/
+**/.claude/
+CLAUDE.md
+CLAUDE.local.md
+# Playwright MCP scratch, when a sync drops it on a remote host.
+.playwright-mcp/
+# Screenshots from browser-driven verification runs.
+/*.png
 
 # ── Ansible deploy artifacts ─────────────────────────────
 # build-archive.sh tars this very repo, so committing the result would store a
@@ -63,4 +69,3 @@ ansible/inventory.yml
 
 # Design notes written by tooling, kept locally and not shipped.
 docs/superpowers/
-CLAUDE.md
