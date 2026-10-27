@@ -1,0 +1,2 @@
+# pymavlink is needed only by the MAVLink modules; the application-layer attacks are stdlib only.
+pymavlink>=2.4.0

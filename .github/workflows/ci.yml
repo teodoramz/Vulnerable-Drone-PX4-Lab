@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: ${{ matrix.service }} tests
+    # Matches the sensor image (ubuntu:24.04), so the rule tests run its Suricata.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [c2, drone, sensor]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/${{ matrix.service }}/requirements*.txt
+      - name: Install Suricata
+        if: matrix.service == 'sensor'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends suricata
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+      - name: Repo checks
+        if: matrix.service == 'c2'
+        working-directory: .
+        run: |
+          python scripts/check-kit-parity.py
+          python scripts/check-ids-contract.py
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

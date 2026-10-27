@@ -1,0 +1,5 @@
+# Only needed for SIM_BACKEND=px4 (the MavsdkLink adapter).
+# Pulls grpcio; kept out of the core file so mock-mode installs stay lean.
+# Installed only when the c2 image is built with --build-arg INSTALL_PX4=true
+# (the docker-compose.px4.yml override does this).
+mavsdk==2.8.4

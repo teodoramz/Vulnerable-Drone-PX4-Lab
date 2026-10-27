@@ -1,0 +1,19 @@
+# sensor host - docker compose --env-file .env -f sensor.compose.yml up -d --build
+# network_mode: host + NET_ADMIN/NET_RAW so Suricata captures on the segment interface(s);
+# no ports mapping, the sensor API binds on host :9200.
+name: fleet-sensor
+
+services:
+  sensor:
+    build:
+      context: ../services/sensor
+    env_file: .env
+    environment:
+      SENSOR_IFACES: ${SENSOR_IFACES:-ot-ops,ot-air}   # real NICs/SPAN ports on a dedicated sensor host
+      EVE_PATH: ${EVE_PATH:-/var/log/suricata/eve.json}
+      C2_URL: http://${C2_HOST:-c2}:8000
+      IDS_PUSH_TOKEN: ${IDS_PUSH_TOKEN:-ids-dev-token}
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW

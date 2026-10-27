@@ -1,0 +1,66 @@
+
+!.env.example
+!services/sensor/tests/fixtures/*.pcap
+# Playwright MCP scratch output
+# Playwright MCP scratch, when a sync drops it on a remote host.
+# Reference captures used to validate IDS rules ARE committed.
+# Rotating packet captures written by the sensor (bounded by
+# Screenshots from browser-driven verification runs.
+# pytest caches
+# suricata.yaml pcap-log limit/max-files). Never committed.
+# ── Editor / OS ──────────────────────────────────────────
+# ── Local agent config (never commit) ────────────────────
+# ── Node / frontend ──────────────────────────────────────
+# ── PX4 firmware (cloned/compiled at runtime, do not commit) ─
+# ── Packet captures (SIEM/sniffer artifacts) ─────────────
+# ── Python ───────────────────────────────────────────────
+# ── Secrets / env ────────────────────────────────────────
+# ── Sensor runtime artifacts ─────────────────────────────
+**/.claude/
+*.db
+*.egg-info/
+*.env
+*.pcap
+*.pcap[0-9]*
+*.pcapng
+*.py[cod]
+*.sqlite3
+*.swp
+*.tsbuildinfo
+.DS_Store
+.claude/
+.env
+.env.*
+.idea/
+.mypy_cache/
+.playwright-mcp/
+.pytest_cache/
+.venv-*/
+.venv/
+.vite/
+.vscode/
+/*.png
+CLAUDE.local.md
+PX4-Autopilot/
+__pycache__/
+captures/
+eve.json
+node_modules/
+npm-debug.log*
+services/drone/PX4-Autopilot/
+services/frontend/dist/
+services/sensor/logs/
+venv/
+
+# ── Ansible deploy artifacts ─────────────────────────────
+# build-archive.sh tars this very repo, so committing the result would store a
+# ~20 MB copy of the tree inside the tree, stale from the next edit onwards.
+ansible/roles/drone_lab/files/*.tar.gz
+
+# The inventory carries the range's SSH and sudo passwords. The committed
+# template is inventory.yml.example; your real inventory stays local.
+ansible/inventory.yml
+
+# Design notes written by tooling, kept locally and not shipped.
+docs/superpowers/
+CLAUDE.md

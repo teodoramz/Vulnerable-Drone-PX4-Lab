@@ -1,0 +1,273 @@
+# drone-lab OT ruleset: custom Suricata rules for the drone patrol scenario.
+# sid range 9000001-9000099 (local, clear of ET Open and VRT ranges).
+#
+# Vars (suricata.yaml vars.address-groups / port-groups, rendered by entrypoint.sh):
+#   HOME_NET        both OT segments (ot-ops + ot-air)
+#   C2_HOST         the only legitimate MAVLink peer and :9100 caller
+#   DRONE_HOST      the drone service (PX4 SITL / mock)
+#   MAVLINK_PORTS   [14540, 14550]
+#   LIFECYCLE_PORT  9100
+#   C2_HTTP_PORT    8000
+#
+# Per-packet rules carry a `limit` threshold so a flood cannot evict other
+# alerts from the ring buffer. Rate-based rules use their own counters.
+#
+# MAVLink has no native Suricata parser, so frames are matched by byte offset.
+# Offsets are absolute from the start of the UDP payload (one frame per
+# datagram). `depth` counts from `offset`, so it equals the pattern length.
+#
+# Both wire formats are on the link and each needs its own rule, since a
+# content match cannot express an alternation. PX4 accepts either, and
+# pymavlink emits v1 unless asked for v2, so a v2-only rule misses the
+# commonest attack tooling.
+#
+#   v2  0 magic 0xFD | 1 len | 2 incompat | 3 compat | 4 seq | 5 sysid |
+#       6 compid | 7..9 msgid (LE, 24-bit) | 10.. payload | +2 checksum
+#   v1  0 magic 0xFE | 1 len | 2 seq | 3 sysid | 4 compid | 5 msgid |
+#       6.. payload | +2 checksum
+#
+# COMMAND_LONG (76) payload, wire-ordered by field size: param1..param7 as
+# floats from payload+0, command uint16 at payload+28. So param2 and command
+# sit at absolute 14 and 38 in v2, and at 10 and 34 in v1.
+#
+# Each detection is one signature name on two sids: the 9000001-9000015 block
+# matches v2, the 9000021-9000032 block matches v1.
+
+# 1. Command injection from a non-C2 source
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink COMMAND_LONG injected by non-C2 source"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|4C 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000001; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink COMMAND_LONG injected by non-C2 source"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|4C|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000021; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink SET_MODE injected by non-C2 source"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|0B 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000002; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink SET_MODE injected by non-C2 source"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|0B|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000022; rev:2; \
+)
+
+# Position control: 86 SET_POSITION_TARGET_GLOBAL_INT, 75 COMMAND_INT
+# (DO_REPOSITION). Threshold is count 2: two setpoints from a non-C2 source
+# is already the attack.
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink position setpoint injected by non-C2 source (drone being steered)"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|56 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 2, seconds 10; \
+    classtype:attempted-admin; sid:9000014; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink position setpoint injected by non-C2 source (drone being steered)"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|56|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 2, seconds 10; \
+    classtype:attempted-admin; sid:9000023; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink COMMAND_INT injected by non-C2 source (reposition)"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|4B 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 2, seconds 10; \
+    classtype:attempted-admin; sid:9000015; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink COMMAND_INT injected by non-C2 source (reposition)"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|4B|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 2, seconds 10; \
+    classtype:attempted-admin; sid:9000024; rev:2; \
+)
+
+# 2. Forced disarm: ARM_DISARM (400) with magic 21196 in param2, any source.
+# param2 float32 LE = 21196.0; command uint16 LE = 400.
+alert udp any any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink forced DISARM (kill magic 21196 in param2)"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|4C 00 00|"; offset:7; depth:3; \
+    content:"|00 98 A5 46|"; offset:14; depth:4; \
+    content:"|90 01|"; offset:38; depth:2; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    priority:1; classtype:attempted-dos; sid:9000003; rev:2; \
+)
+
+alert udp any any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink forced DISARM (kill magic 21196 in param2)"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|4C|"; offset:5; depth:1; \
+    content:"|00 98 A5 46|"; offset:10; depth:4; \
+    content:"|90 01|"; offset:34; depth:2; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    priority:1; classtype:attempted-dos; sid:9000025; rev:2; \
+)
+
+# 3. GPS spoofing: GPS_INPUT (232) / HIL_GPS (113) sent to the aircraft.
+# Destination is $DRONE_HOST and the drone is excluded as source, since PX4 SIH
+# emits HIL_GPS itself.
+# msgid 232 = GPS_INPUT
+alert udp !$DRONE_HOST any -> $DRONE_HOST $MAVLINK_PORTS ( \
+    msg:"DRONE-OT GPS spoofing: GPS_INPUT injected on MAVLink link"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|E8 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:bad-unknown; sid:9000004; rev:3; \
+)
+
+alert udp !$DRONE_HOST any -> $DRONE_HOST $MAVLINK_PORTS ( \
+    msg:"DRONE-OT GPS spoofing: GPS_INPUT injected on MAVLink link"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|E8|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:bad-unknown; sid:9000026; rev:2; \
+)
+
+# msgid 113 = HIL_GPS
+alert udp !$DRONE_HOST any -> $DRONE_HOST $MAVLINK_PORTS ( \
+    msg:"DRONE-OT GPS spoofing: HIL_GPS injected on MAVLink link"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|71 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:bad-unknown; sid:9000005; rev:3; \
+)
+
+alert udp !$DRONE_HOST any -> $DRONE_HOST $MAVLINK_PORTS ( \
+    msg:"DRONE-OT GPS spoofing: HIL_GPS injected on MAVLink link"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|71|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:bad-unknown; sid:9000027; rev:2; \
+)
+
+# 4. Mission tampering from a non-C2 source
+# msgid 44 = MISSION_COUNT
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT mission tampering: MISSION_COUNT from non-C2 source"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|2C 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000006; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT mission tampering: MISSION_COUNT from non-C2 source"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|2C|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000028; rev:2; \
+)
+
+# msgid 73 = MISSION_ITEM_INT
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT mission tampering: MISSION_ITEM_INT from non-C2 source"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|49 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000007; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT mission tampering: MISSION_ITEM_INT from non-C2 source"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|49|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000029; rev:2; \
+)
+
+# msgid 45 = MISSION_CLEAR_ALL (flight plan wipe; `waypoint` verb)
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT mission tampering: MISSION_CLEAR_ALL wiped the flight plan"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|2D 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    priority:1; classtype:attempted-admin; sid:9000013; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT mission tampering: MISSION_CLEAR_ALL wiped the flight plan"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|2D|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    priority:1; classtype:attempted-admin; sid:9000030; rev:2; \
+)
+
+# 5. Failsafe/geofence tampering: PARAM_SET (23)
+# msgid 23 = PARAM_SET
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT PARAM_SET from non-C2 source (failsafe/geofence tampering)"; \
+    content:"|FD|"; offset:0; depth:1; \
+    content:"|17 00 00|"; offset:7; depth:3; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000008; rev:2; \
+)
+
+alert udp !$C2_HOST any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT PARAM_SET from non-C2 source (failsafe/geofence tampering)"; \
+    content:"|FE|"; offset:0; depth:1; \
+    content:"|17|"; offset:5; depth:1; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000031; rev:2; \
+)
+
+# 6. MAVLink flood: >100 frames in 5s to the GCS link.
+# `both` caps alerts to one per window; `threshold` still alerts per 100 frames.
+alert udp any any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink flood detected (high frame rate to GCS link)"; \
+    content:"|FD|"; offset:0; depth:1; \
+    threshold: type both, track by_src, count 100, seconds 5; \
+    classtype:attempted-dos; sid:9000009; rev:1; \
+)
+
+alert udp any any -> $DRONE_HOST 14550 ( \
+    msg:"DRONE-OT MAVLink flood detected (high frame rate to GCS link)"; \
+    content:"|FE|"; offset:0; depth:1; \
+    threshold: type both, track by_src, count 100, seconds 5; \
+    classtype:attempted-dos; sid:9000032; rev:1; \
+)
+
+# 7. Auth brute force: repeated POST /api/auth/login (C2 has no rate limit)
+alert http any any -> $C2_HOST $C2_HTTP_PORT ( \
+    msg:"DRONE-OT C2 auth brute force (repeated /api/auth/login)"; \
+    flow:to_server,established; \
+    http.method; content:"POST"; nocase; \
+    http.uri; content:"/api/auth/login"; startswith; endswith; \
+    threshold: type threshold, track by_src, count 5, seconds 10; \
+    classtype:attempted-recon; sid:9000010; rev:1; \
+)
+
+# 8. Unauthenticated lifecycle API (:9100) access from a non-C2 source
+alert http !$C2_HOST any -> $DRONE_HOST $LIFECYCLE_PORT ( \
+    msg:"DRONE-OT unauthenticated lifecycle API access on drone:9100"; \
+    flow:to_server,established; \
+    threshold: type limit, track by_src, count 3, seconds 10; \
+    classtype:attempted-admin; sid:9000011; rev:1; \
+)
+
+# 9. Port sweep across the OT segment
+alert tcp $HOME_NET any -> $HOME_NET any ( \
+    msg:"DRONE-OT TCP port sweep detected on OT segment"; \
+    flags:S,12; \
+    threshold: type both, track by_src, count 15, seconds 5; \
+    classtype:network-scan; sid:9000012; rev:1; \
+)

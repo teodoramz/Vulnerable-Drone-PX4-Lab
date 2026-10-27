@@ -1,0 +1,17 @@
+---
+# Copy to inventory.yml (gitignored: holds SSH/sudo passwords). Lab credentials live in defaults/main.yml on purpose.
+#
+#   cp ansible/inventory.yml.example ansible/inventory.yml
+#
+# With an SSH key, drop both *_pass lines: ssh-copy-id ansible@<target>
+all:
+  hosts:
+    drone-vm:
+      ansible_host: DRONE_VM_IP
+      ansible_user: ansible
+      ansible_become: true
+
+      # Password auth if there is no key; prefer --ask-pass/--ask-become-pass or ansible-vault:
+      #   ansible-vault encrypt_string 'thepassword' --name ansible_ssh_pass
+      # ansible_ssh_pass: "CHANGE-ME"
+      # ansible_become_password: "CHANGE-ME"

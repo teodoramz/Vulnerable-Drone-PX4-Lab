@@ -1,0 +1,30 @@
+# drone host (PX4 SITL) - docker compose --env-file .env -f drone.compose.yml up -d --build
+# Linux/WSL2 only. First boot compiles PX4 (~20-40 min), cached in the px4build volume.
+# For a mock-only trial use the root docker-compose.mock.yml stack.
+name: fleet-drone
+
+services:
+  drone:
+    build:
+      context: ..                       # repo root
+      dockerfile: services/drone/px4/Dockerfile
+    env_file: .env
+    environment:
+      DRONE_BACKEND: px4
+      DRONE_COUNT: ${DRONE_COUNT:-1}
+      C2_HOST: ${C2_HOST:-c2}            # MAVLink relay target
+      PX4_MAVLINK_BASE_PORT: "14540"
+      HOME_LAT: ${HOME_LAT:-43.9977991}
+      HOME_LON: ${HOME_LON:-25.0154851}
+      HOME_ALT: ${HOME_ALT:-95.0}
+    privileged: true
+    init: true
+    shm_size: "1gb"
+    volumes:
+      - px4build:/app/PX4-Autopilot     # persist compiled firmware
+    ports:
+      - "9100:9100"                     # lifecycle API (c2 -> drone, unauthenticated by design)
+      - "14550:14550/udp"               # the exposed radio link - what attackers attach to
+
+volumes:
+  px4build:

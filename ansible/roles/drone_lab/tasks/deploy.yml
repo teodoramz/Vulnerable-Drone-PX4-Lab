@@ -1,0 +1,62 @@
+---
+- name: Ensure the install directory exists
+  ansible.builtin.file:
+    path: "{{ drone_lab_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ship the lab source
+  ansible.builtin.unarchive:
+    src: "{{ role_path }}/files/drone-lab.tar.gz"
+    dest: "{{ drone_lab_dir }}"
+    owner: root
+    group: root
+    extra_opts: ["--strip-components=1"]
+  notify: Restart the drone lab
+
+- name: Ensure the capture directory exists
+  ansible.builtin.file:
+    path: "{{ drone_lab_dir }}/captures"
+    state: directory
+    mode: "0755"
+
+- name: Template the environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ drone_lab_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart the drone lab
+
+- name: Record the compose -f set
+  ansible.builtin.copy:
+    content: |
+      {{ drone_lab_compose_files }}
+    dest: "{{ drone_lab_dir }}/.compose-files"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Leave a note on how to drive it
+  ansible.builtin.copy:
+    content: |
+      # Deployed by Ansible (ansible/roles/drone_lab). Backend: {{ drone_lab_backend }}
+      #
+      # The stack runs under systemd:
+      #     systemctl status {{ drone_lab_service }}
+      #     journalctl -u {{ drone_lab_service }} -f
+      #
+      # Driving compose by hand:
+      #     cd {{ drone_lab_dir }}
+      #     docker compose $(cat .compose-files) ps
+      #     docker compose $(cat .compose-files) logs -f c2
+      #
+      # Console:    http://<this-host>:{{ drone_lab_console_port | default(80) }}
+      # Public API: http://<this-host>:8000/api/public/drone
+      # Radio link: <this-host>:14550/udp  (unauthenticated)
+      # Attacks:    {{ drone_lab_dir }}/tools/exploit.py
+    dest: "{{ drone_lab_dir }}/DEPLOYED-BY-ANSIBLE.md"
+    owner: root
+    group: root
+    mode: "0644"

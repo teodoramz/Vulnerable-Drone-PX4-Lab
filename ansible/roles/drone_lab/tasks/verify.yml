@@ -1,0 +1,85 @@
+---
+- name: Wait for the mission server to answer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ drone_lab_api_port }}/health"
+    status_code: 200
+  register: c2_health
+  until: c2_health is succeeded
+  retries: 40
+  delay: 6
+
+- name: Wait for the ground station to answer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ drone_lab_console_port | default(80) }}/"
+    status_code: 200
+  register: gcs_health
+  until: gcs_health is succeeded
+  retries: 30
+  delay: 4
+
+- name: Check the drone backend is the one that was asked for
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9100/health"
+    return_content: true
+  register: drone_health
+  until: drone_health is succeeded and (drone_health.json.backend | default('')) == drone_lab_backend
+  # Up to 40 min, the slow end of a first PX4 build.
+  retries: 240
+  delay: 10
+
+- name: Check the public status API answers without credentials
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ drone_lab_api_port }}/api/public/drone"
+    return_content: true
+  register: public_status
+  until: public_status is succeeded and public_status.json.state is defined
+  retries: 20
+  delay: 6
+
+- name: Log in to verify credentials
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ drone_lab_api_port }}/api/auth/login"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ drone_lab_admin_user }}"
+      password: "{{ drone_lab_admin_pass }}"
+    status_code: 200
+  register: login
+  until: login is succeeded
+  retries: 10
+  delay: 5
+
+- name: Fetch the site definition
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ drone_lab_api_port }}/api/site"
+    headers:
+      Authorization: "Bearer {{ login.json.access_token }}"
+    return_content: true
+  register: site_def
+
+- name: Assert the scenario is actually there
+  ansible.builtin.assert:
+    that:
+      - site_def.json.total_objects == 15793
+      - site_def.json.launch_pads | length == 2
+      - site_def.json.routes | length >= 4
+    success_msg: >-
+      {{ site_def.json.name }}: {{ site_def.json.total_objects }} objects,
+      pads {{ site_def.json.launch_pads | map(attribute='designator') | join(', ') }},
+      {{ site_def.json.routes | length }} patrol routes.
+    fail_msg: >-
+      Site dataset did not load. Check services/c2/app/data/airport_objects.json.
+
+- name: Report where the console is
+  ansible.builtin.debug:
+    msg:
+      - "Drone lab up on {{ inventory_hostname }} ({{ ansible_host | default('localhost') }})"
+      - "  console:    http://{{ ansible_host | default('localhost') }}:{{ drone_lab_console_port | default(80) }}"
+      - "    admin:     {{ drone_lab_admin_user }} / {{ drone_lab_admin_pass }}"
+      - "    operator:  {{ drone_lab_operator_user }} / {{ drone_lab_operator_pass }}"
+      - "    observer:  {{ drone_lab_observer_user }} / {{ drone_lab_observer_pass }}"
+      - "  backend:    {{ drone_health.json.backend }}"
+      - "  drone:      {{ public_status.json.state }}"
+      - "  public API: http://{{ ansible_host | default('localhost') }}:8000/api/public/drone"
+      - "  radio link: {{ ansible_host | default('localhost') }}:14550/udp  (unauthenticated)"

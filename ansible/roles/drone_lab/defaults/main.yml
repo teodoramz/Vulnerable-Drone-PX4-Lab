@@ -1,0 +1,44 @@
+---
+# Where the lab lives on the target
+drone_lab_dir: "/opt/drone-lab"
+drone_lab_service: "drone-lab"
+
+# Backend: "px4" (real firmware, 20-40 min first build) or "mock" (2 min)
+drone_lab_backend: "px4"
+
+drone_lab_drone_count: 1
+drone_lab_home_alt: 95.0
+
+# Console accounts (re-asserted on every boot)
+drone_lab_admin_user: "admin"
+drone_lab_admin_pass: "Admin1Admin1"
+
+drone_lab_seed_demo_users: true
+drone_lab_operator_user: "operator"
+drone_lab_operator_pass: "Admin1Admin1"
+drone_lab_observer_user: "observer"
+drone_lab_observer_pass: "Admin1Admin1"
+
+# JWT secret - deliberately weak so tools/exploit.py jwtforge can crack it
+drone_lab_jwt_secret: "change-me-to-a-long-random-secret-string"
+
+# Database
+drone_lab_postgres_db: "fleet"
+drone_lab_postgres_user: "fleet"
+drone_lab_postgres_pass: "Admin1Admin1"
+
+# Sensor
+drone_lab_sensor_ifaces: "ot-ops,ot-air"
+drone_lab_ids_push_token: "ids-dev-token"
+
+# Console port (nginx)
+drone_lab_console_port: 80
+
+# Published host port for the mission server API (C2_HOST_PORT; used by the deploy health checks).
+drone_lab_api_port: 8000
+
+# Attacker container on internal segments (off by default)
+drone_lab_deploy_attacker: false
+
+# Disables Docker userland proxy so IDS alerts show the real source IP; merges daemon.json and restarts Docker.
+drone_lab_preserve_source_ip: true

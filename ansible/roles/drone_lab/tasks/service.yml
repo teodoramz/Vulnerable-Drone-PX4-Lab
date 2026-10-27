@@ -1,0 +1,27 @@
+---
+- name: Template the systemd unit
+  ansible.builtin.template:
+    src: drone-lab.service.j2
+    dest: "/etc/systemd/system/{{ drone_lab_service }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+# Build before flush_handlers: it fires the restart handler, which would otherwise race this build.
+- name: Build the images
+  ansible.builtin.command:
+    cmd: "docker compose {{ drone_lab_compose_files }} build"
+    chdir: "{{ drone_lab_dir }}"
+  async: 5400
+  poll: 30
+  changed_when: true
+
+- name: Reload systemd and apply any pending restart
+  ansible.builtin.meta: flush_handlers
+
+- name: Start and enable the lab
+  ansible.builtin.systemd:
+    name: "{{ drone_lab_service }}"
+    state: started
+    enabled: true

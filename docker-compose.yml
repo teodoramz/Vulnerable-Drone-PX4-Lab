@@ -1,0 +1,184 @@
+name: drone-control-platform
+
+# One-drone OT scenario: single-host stack with three segmented bridges (see deploy/ for the multi-VM split).
+# Default backend is real PX4 SITL (first build ~20-40 min, cached in the px4build volume);
+# for a quick start use: docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build
+# Segments (port/firewall matrix in docs/INFRASTRUCTURE.md):
+#   edge: gcs; also attached to ops so it can reach c2:8000, the only permitted boundary crossing.
+#   ops:  c2, db, sensor (alert path)
+#   air:  drone, sensor (capture path)
+
+# Log rotation for every service: unbounded PX4 console logs have filled the host disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  # ── Database ───────────────────────────────────────────
+  db:
+    logging: *default-logging
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Admin1Admin1}
+      POSTGRES_DB: ${POSTGRES_DB:-fleet}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fleet} -d ${POSTGRES_DB:-fleet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      ops:
+        ipv4_address: 172.30.10.20
+
+  # ── Drone: PX4 SITL / MAVLink ("ot-air" segment) ───────
+  drone:
+    logging: *default-logging
+    build:
+      # build context is the repo root; the image copies services/drone/
+      context: .
+      dockerfile: services/drone/px4/Dockerfile
+    # Distinct tag from the mock override so the two images never share a tag.
+    image: drone-lab/drone-px4
+    environment:
+      DRONE_BACKEND: px4
+      DRONE_COUNT: ${DRONE_COUNT:-1}
+      C2_HOST: c2
+      PX4_MAVLINK_BASE_PORT: "14540"
+      HOME_LAT: ${HOME_LAT:-43.9977991}
+      HOME_LON: ${HOME_LON:-25.0154851}
+      HOME_ALT: ${HOME_ALT:-95.0}
+    privileged: true
+    # init (tini) as PID 1 to reap orphaned PX4 threads.
+    init: true
+    shm_size: "1gb"
+    volumes:
+      - px4build:/app/PX4-Autopilot   # persist the compiled firmware across recreates
+    ports:
+      - "9100:9100"          # lifecycle API - exposed for debugging the drone directly
+      - "14550:14550/udp"    # the exposed radio link - no auth, by design
+    networks:
+      air:
+        ipv4_address: 172.30.20.10
+
+  # ── Command & Control / mission server ("ot-ops") ──────
+  c2:
+    logging: *default-logging
+    build:
+      context: ./services/c2
+      args:
+        INSTALL_PX4: "true"   # pulls MAVSDK into the c2 image for the px4 backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fleet}:${POSTGRES_PASSWORD:-Admin1Admin1}@db:5432/${POSTGRES_DB:-fleet}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret-string}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-720}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin1Admin1}
+      # Re-asserted on every boot, so changes apply on redeploy.
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-true}
+      OPERATOR_USERNAME: ${OPERATOR_USERNAME:-operator}
+      OPERATOR_PASSWORD: ${OPERATOR_PASSWORD:-Admin1Admin1}
+      OBSERVER_USERNAME: ${OBSERVER_USERNAME:-observer}
+      OBSERVER_PASSWORD: ${OBSERVER_PASSWORD:-Admin1Admin1}
+      DRONE_BACKEND: ${DRONE_BACKEND:-px4}
+      DRONE_API_URL: ${DRONE_API_URL:-http://drone:9100}
+      DRONE_WS_URL: ${DRONE_WS_URL:-ws://drone:9100/ws}
+      DRONE_MAVLINK_PORT: ${DRONE_MAVLINK_PORT:-14540}
+      DRONE_COUNT: ${DRONE_COUNT:-1}
+      HOME_LAT: ${HOME_LAT:-43.9977991}
+      HOME_LON: ${HOME_LON:-25.0154851}
+      HOME_ALT: ${HOME_ALT:-95.0}
+      IDS_PUSH_TOKEN: ${IDS_PUSH_TOKEN:-ids-dev-token}
+      IDS_BUFFER_SIZE: ${IDS_BUFFER_SIZE:-500}
+      # Sensor uses host networking (not on ops DNS); c2 reaches it via the ops gateway, i.e. this host.
+      SENSOR_URL: ${SENSOR_URL:-http://172.30.10.1:9200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+      drone:
+        condition: service_started
+    ports:
+      - "${C2_HOST_PORT:-8000}:8000"   # REST + WebSocket API - the one boundary-crossing port
+      - "14540:14540/udp"    # MAVLink telemetry relay from drone
+    networks:
+      ops:
+        ipv4_address: 172.30.10.10
+      air:
+        ipv4_address: 172.30.20.11
+
+  # ── Sensor: Suricata + alert API (spans ot-ops / ot-air) ─
+  sensor:
+    logging: *default-logging
+    build:
+      context: ./services/sensor
+    environment:
+      SENSOR_IFACES: ${SENSOR_IFACES:-ot-ops,ot-air}
+      EVE_PATH: ${EVE_PATH:-/var/log/suricata/eve.json}
+      C2_URL: ${C2_URL:-http://localhost:8000}
+      IDS_PUSH_TOKEN: ${IDS_PUSH_TOKEN:-ids-dev-token}
+      # Placeholder addresses in the ruleset otherwise match nothing; c2 has one address per internal segment.
+      HOME_NET: ${HOME_NET:-[172.30.0.0/16]}
+      C2_HOST_ADDR: ${C2_HOST_ADDR:-[172.30.10.10/32,172.30.20.11/32]}
+      DRONE_HOST_ADDR: ${DRONE_HOST_ADDR:-[172.30.20.10/32]}
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      # Rotating pcap on the host, bounded by suricata.yaml pcap-log limits.
+      - ./captures:/var/log/suricata/captures
+    depends_on:
+      c2:
+        condition: service_started
+    # network_mode: host, so no ports mapping; the sensor API binds directly on host :9200.
+
+  # ── Ground station: nginx + React SPA ("edge" segment) ──
+  gcs:
+    logging: *default-logging
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    environment:
+      C2_UPSTREAM: ${C2_UPSTREAM:-http://c2:8000}
+    depends_on: [c2]
+    ports:
+      - "${GCS_HOST_PORT:-8080}:80"
+    # On edge only in the real deployment (deploy/gcs.compose.yml); attached to ops here for the single permitted gcs -> c2:8000 flow.
+    networks:
+      edge:
+        ipv4_address: 172.30.30.10
+      ops:
+        ipv4_address: 172.30.10.30
+
+# Fixed subnets: IDS rules identify peers by address (C2_HOST / DRONE_HOST). See docs/INFRASTRUCTURE.md.
+networks:
+  edge:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: ot-edge
+    ipam:
+      config:
+        - subnet: 172.30.30.0/24
+  ops:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: ot-ops
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+  air:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: ot-air
+    ipam:
+      config:
+        - subnet: 172.30.20.0/24
+
+volumes:
+  pgdata:
+  px4build:

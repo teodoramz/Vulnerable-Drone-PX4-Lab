@@ -1,0 +1,47 @@
+---
+- name: Deploy drone patrol scenario
+  hosts: all
+  become: true
+  vars:
+    repo_root: "{{ playbook_dir }}/.."
+    archive_dest: "{{ playbook_dir }}/roles/drone_lab/files/drone-lab.tar.gz"
+
+  # Packaging runs inside this play, delegated to the controller, so that
+  # `--limit <host>` cannot skip it and ship a stale archive.
+  pre_tasks:
+    - name: Ensure the files directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/roles/drone_lab/files"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    # Always rebuilt so an edited repo never ships a stale archive; -e skip_archive=true reuses it.
+    - name: Build drone-lab.tar.gz from the repo
+      ansible.builtin.command:
+        cmd: bash ansible/build-archive.sh
+        chdir: "{{ repo_root }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      when: not (skip_archive | default(false) | bool)
+      changed_when: true
+
+    - name: Verify archive exists
+      ansible.builtin.stat:
+        path: "{{ archive_dest }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: archive_final
+      failed_when: not archive_final.stat.exists
+
+    - name: Report archive size
+      ansible.builtin.debug:
+        msg: "Archive: {{ archive_dest }} ({{ (archive_final.stat.size / 1048576) | round(1) }} MB)"
+      run_once: true
+
+  roles:
+    - drone_lab

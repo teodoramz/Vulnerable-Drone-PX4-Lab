@@ -1,0 +1,6 @@
+---
+- ansible.builtin.include_tasks: apt.yml
+- ansible.builtin.include_tasks: deploy.yml
+- ansible.builtin.include_tasks: service.yml
+- ansible.builtin.include_tasks: database.yml
+- ansible.builtin.include_tasks: verify.yml

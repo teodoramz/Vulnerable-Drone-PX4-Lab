@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  role_name: drone_lab
+  author: drone-lab
+  description: >-
+    Single-host deployment of the drone patrol scenario: surveillance drone,
+    mission server, unauthenticated MAVLink radio link, and Suricata sensor.
+  license: proprietary
+  min_ansible_version: "2.12"
+dependencies: []

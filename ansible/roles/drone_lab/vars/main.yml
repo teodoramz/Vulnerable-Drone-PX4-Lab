@@ -1,0 +1,7 @@
+---
+drone_lab_compose_files: >-
+  -f docker-compose.yml{{
+    ' -f docker-compose.mock.yml' if drone_lab_backend == 'mock' else ''
+  }}{{
+    ' -f docker-compose.attacker.yml' if drone_lab_deploy_attacker else ''
+  }}

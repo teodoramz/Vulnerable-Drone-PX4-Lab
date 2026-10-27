@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Sentinel">
+  <!-- Tab icon: solid rendition of the DroneMark in src/components/Brand.tsx, legible at 16px. -->
+  <rect width="32" height="32" rx="7" fill="#0f172a"/>
+
+  <!-- X frame. -->
+  <g stroke="#60a5fa" stroke-width="4.6" stroke-linecap="round">
+    <path d="M9 9 L23 23"/>
+    <path d="M23 9 L9 23"/>
+  </g>
+
+  <!-- Rotors. -->
+  <g fill="#60a5fa">
+    <circle cx="9" cy="9" r="4.4"/>
+    <circle cx="23" cy="9" r="4.4"/>
+    <circle cx="9" cy="23" r="4.4"/>
+    <circle cx="23" cy="23" r="4.4"/>
+  </g>
+
+  <!-- Hub. -->
+  <circle cx="16" cy="16" r="5" fill="#3b82f6"/>
+</svg>

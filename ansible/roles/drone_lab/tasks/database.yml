@@ -1,0 +1,53 @@
+---
+- name: Wait for the database to accept connections
+  ansible.builtin.command:
+    cmd: >-
+      docker compose {{ drone_lab_compose_files }}
+      exec -T db pg_isready -U {{ drone_lab_postgres_user }}
+    chdir: "{{ drone_lab_dir }}"
+  register: pg_ready
+  until: pg_ready.rc == 0
+  retries: 30
+  delay: 4
+  changed_when: false
+
+- name: Make the configured password authoritative
+  ansible.builtin.command:
+    cmd: >-
+      docker compose {{ drone_lab_compose_files }}
+      exec -T db psql -U {{ drone_lab_postgres_user }} -d {{ drone_lab_postgres_db }}
+      -c "ALTER USER {{ drone_lab_postgres_user }} WITH PASSWORD '{{ drone_lab_postgres_pass }}';"
+    chdir: "{{ drone_lab_dir }}"
+  register: pg_alter
+  changed_when: "'ALTER ROLE' in pg_alter.stdout"
+  failed_when: false
+
+- name: Explain it if the password could not be set
+  ansible.builtin.fail:
+    msg: >-
+      Could not set the password for database role
+      '{{ drone_lab_postgres_user }}': {{ pg_alter.stderr | default(pg_alter.stdout) | trim }}.
+      If the role does not exist, the pgdata volume was initialised with different names.
+      Either match drone_lab_postgres_user/db, or remove the volume:
+      `docker compose {{ drone_lab_compose_files }} down -v`
+  when: pg_alter.rc != 0
+
+# Restart only if C2 is unhealthy: ALTER ROLE output and pg_hba trust cannot show whether the password changed.
+- name: Check whether the mission server is already healthy with these credentials
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ drone_lab_api_port }}/health"
+    status_code: 200
+  register: c2_pre_restart
+  # Retry so a booting C2 is not mistaken for an auth failure.
+  until: c2_pre_restart is succeeded
+  retries: 10
+  delay: 3
+  failed_when: false
+  changed_when: false
+
+# Only the C2 reads them; restarting the drone would kill a first-boot PX4 fetch.
+- name: Restart the mission server so it picks up the database credentials
+  ansible.builtin.command:
+    cmd: docker compose {{ drone_lab_compose_files }} restart c2
+    chdir: "{{ drone_lab_dir }}"
+  when: (c2_pre_restart.status | default(0)) != 200

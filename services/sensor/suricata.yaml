@@ -1,0 +1,172 @@
+%YAML 1.1
+---
+# Suricata configuration for the drone-lab `sensor` service.
+#
+# Runs a single ruleset (drone-ot.rules); stock ET categories and unused
+# app-layer parsers are off. Addresses and interfaces are overridden by
+# entrypoint.sh via `suricata --set`. The placeholders below are TEST-NET
+# addresses so unsupplied values over-alert instead of silently matching nothing.
+
+vars:
+  address-groups:
+    HOME_NET: "[172.16.0.0/12,192.168.0.0/16,10.0.0.0/8]"
+    C2_HOST: "[203.0.113.10/32]"
+    DRONE_HOST: "[203.0.113.20/32]"
+    EXTERNAL_NET: "!$HOME_NET"
+
+  port-groups:
+    MAVLINK_PORTS: "[14540,14550]"
+    LIFECYCLE_PORT: "9100"
+    C2_HTTP_PORT: "8000"
+
+# One af-packet entry per interface in SENSOR_IFACES. entrypoint.sh regenerates
+# this block at startup (`--set` cannot create entries, and a half-initialised
+# second entry segfaults Suricata). The stub below targets loopback for
+# `suricata -T` rule validation.
+af-packet:
+  - interface: lo
+    threads: 1
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+
+# No live interfaces are read from a pcap file in this deployment.
+pcap: []
+
+# ── Detection engine ──────────────────────────────────────────────────
+default-rule-path: /etc/suricata/rules
+rule-files:
+  - drone-ot.rules
+
+classification-file: /etc/suricata/classification.config
+reference-config-file: /etc/suricata/reference.config
+
+# No threshold.config; rate-limiting is inline in drone-ot.rules.
+
+# ── Logging ────────────────────────────────────────────────────────────
+default-log-dir: /var/log/suricata/
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      pcap-file: false
+      community-id: false
+      types:
+        - alert:
+            # Carry the triggering bytes (the forged frame) in the alert; payload-buffer-size caps them.
+            payload: yes
+            payload-printable: yes
+            payload-buffer-size: 4kb
+            packet: yes
+            http-body: false
+            metadata: yes
+            tagged-packets: false
+        - flow:
+            enabled: yes
+
+  # Rotating full-packet capture for Wireshark analysis.
+  # Capped: a MAVLink flood (~60k frames/sec) would otherwise fill the disk.
+  - pcap-log:
+      enabled: yes
+      # Relative so it resolves under the active log dir. Suricata does not create it; the caller must.
+      dir: captures
+      # No %n: it is only substituted in multi-threaded pcap mode. Files are ot-lab.pcap.<timestamp>.
+      filename: ot-lab.pcap
+      limit: 32mb
+      max-files: 8
+      compression: none
+      mode: normal
+      use-stream-depth: no
+      honor-pass-rules: no
+      # Capture everything, not only packets that alerted.
+      conditional: all
+
+  # Other stock outputs are omitted; the sidecar reads only `alert` and `flow` records.
+  - stats:
+      enabled: no
+
+# Flow timeouts
+# Flow records are emitted when a flow ends. Stock UDP timeouts (300s/60s) would
+# leave the traffic view empty for minutes, so they are cut hard here.
+# Lab-only: this trades more flow records for responsiveness.
+flow-timeouts:
+  default:
+    new: 5
+    established: 30
+    closed: 3
+    emergency-new: 3
+    emergency-established: 10
+    emergency-closed: 1
+  tcp:
+    new: 5
+    established: 60
+    closed: 5
+    emergency-new: 3
+    emergency-established: 20
+    emergency-closed: 2
+  udp:
+    new: 5
+    established: 20
+    emergency-new: 3
+    emergency-established: 10
+  icmp:
+    new: 3
+    established: 10
+    emergency-new: 1
+    emergency-established: 5
+
+logging:
+  default-log-level: notice
+  outputs:
+    - console:
+        enabled: yes
+
+# App-layer protocols
+# MAVLink is matched as raw UDP payload. HTTP is needed for the brute-force,
+# lifecycle and recon rules; everything else is off.
+app-layer:
+  protocols:
+    http:
+      enabled: yes
+    tls:
+      enabled: no
+    ssh:
+      enabled: no
+    smtp:
+      enabled: no
+    ftp:
+      enabled: no
+    dns:
+      tcp:
+        enabled: no
+      udp:
+        enabled: no
+    smb:
+      enabled: no
+    dhcp:
+      enabled: no
+    ntp:
+      enabled: no
+    sip:
+      enabled: no
+    snmp:
+      enabled: no
+    rdp:
+      enabled: no
+    modbus:
+      enabled: no
+
+# MAVLink datagrams are single-frame, so default defrag settings are fine.
+host-mode: sniffer-only
+
+threading:
+  set-cpu-affinity: no
+
+unix-command:
+  enabled: no
+
+magic-file: /usr/share/file/magic.mgc

@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: #121110;
+  color: #f6f5f3;
+  user-select: none;
+  overflow: hidden;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Map surface + markers */
+.leaflet-container {
+  background-color: #121110;
+}
+.drone-marker {
+  border-radius: 50%;
+  border: 3px solid white;
+}
+.target-marker {
+  background-color: #f0a83c;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 10px 3px rgba(240, 168, 60, 0.75);
+  cursor: pointer;
+}
+
+/* Joystick */
+.joystick-zone {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: #282521;
+  position: relative;
+  border: 2px solid #3a352f;
+  touch-action: none;
+  margin: 0 auto;
+}
+.joystick-knob {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #14b8a6;
+  position: absolute;
+  top: 46px;
+  left: 46px;
+  pointer-events: none;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Drone patrol scenario ({{ drone_lab_backend }} backend) via docker compose
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ drone_lab_dir }}
+ExecStartPre=-/usr/bin/docker compose {{ drone_lab_compose_files }} down
+ExecStart=/usr/bin/docker compose {{ drone_lab_compose_files }} up
+ExecStop=/usr/bin/docker compose {{ drone_lab_compose_files }} down
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,34 @@
+# Opt-in attacker foothold: a container on ot-ops (172.30.10.66) and ot-air (172.30.20.66).
+# Gives attacks a source address no peer owns, unlike the bridge gateway, so IDS rules and the Network tab can see them (docs/SECURITY.md).
+# Not in the default stack. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml -f docker-compose.attacker.yml up -d attacker
+#   (same -f set) exec attacker python3 tools/exploit.py crashinto
+
+services:
+  attacker:
+    image: python:3.12-slim
+    container_name: ot-attacker
+    hostname: dmz-pivot
+    init: true
+    working_dir: /opt/lab
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "2" }
+    # pymavlink for the MAVLink modules; the application-layer modules are stdlib only.
+    command: >
+      sh -c "pip install --quiet --no-cache-dir pymavlink >/dev/null 2>&1 || true;
+             echo '[attacker] foothold ready on ot-ops/ot-air - exec in and run tools/exploit.py';
+             sleep infinity"
+    volumes:
+      - ./tools:/opt/lab/tools:ro
+    environment:
+      # Pre-pointed at the internal addresses so the toolkit needs no arguments.
+      C2_HOST: 172.30.10.10
+      DRONE_HOST: 172.30.20.10
+      MAVLINK_HOST: 172.30.20.10
+      PYTHONUNBUFFERED: "1"
+    networks:
+      ops:
+        ipv4_address: 172.30.10.66
+      air:
+        ipv4_address: 172.30.20.66

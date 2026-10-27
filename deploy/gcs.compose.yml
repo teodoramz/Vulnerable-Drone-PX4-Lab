@@ -1,0 +1,13 @@
+# gcs host (ground station) - docker compose --env-file .env -f gcs.compose.yml up -d --build
+# The one component outside the internal network: it only reaches c2:8000 (REST + WebSocket).
+name: fleet-gcs
+
+services:
+  gcs:
+    build:
+      context: ../services/frontend
+    env_file: .env
+    environment:
+      C2_UPSTREAM: http://${C2_HOST:-c2}:8000   # nginx proxy target for /api + /ws
+    ports:
+      - "8080:80"

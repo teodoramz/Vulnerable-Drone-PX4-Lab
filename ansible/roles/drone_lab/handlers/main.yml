@@ -1,0 +1,20 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart the drone lab
+  ansible.builtin.systemd:
+    name: "{{ drone_lab_service }}"
+    state: restarted
+
+# Docker restart stops every container, so the lab is restarted after it.
+- name: Restart Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+
+- name: Restart the drone lab after Docker
+  ansible.builtin.systemd:
+    name: "{{ drone_lab_service }}"
+    state: restarted

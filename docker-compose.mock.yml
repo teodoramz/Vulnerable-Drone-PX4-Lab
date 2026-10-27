@@ -1,0 +1,27 @@
+# MOCK backend override for dev/CI/demo: speaks real MAVLink 2 (docs/SIMULATION.md) but skips the PX4 build, privileged and shm.
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build
+
+services:
+  drone:
+    build:
+      context: ./services/drone
+      dockerfile: Dockerfile
+    # Distinct tag from the PX4 image (see docker-compose.yml).
+    image: drone-lab/drone-mock
+    environment:
+      DRONE_BACKEND: mock
+      DRONE_COUNT: ${DRONE_COUNT:-1}
+      HOME_LAT: ${HOME_LAT:-43.9977991}
+      HOME_LON: ${HOME_LON:-25.0154851}
+      HOME_ALT: ${HOME_ALT:-95.0}
+    privileged: false
+    init: false
+    shm_size: !reset null
+    volumes: !reset []
+
+  c2:
+    build:
+      args:
+        INSTALL_PX4: "false"
+    environment:
+      DRONE_BACKEND: mock

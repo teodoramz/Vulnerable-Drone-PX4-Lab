@@ -1,0 +1,32 @@
+# c2 host - docker compose --env-file .env -f c2.compose.yml up -d --build
+name: fleet-c2
+
+services:
+  c2:
+    build:
+      context: ../services/c2
+      args:
+        INSTALL_PX4: ${INSTALL_PX4:-true}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fleet}:${POSTGRES_PASSWORD:-Admin1Admin1}@${DB_HOST:-db}:5432/${POSTGRES_DB:-fleet}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret-string}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-720}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin1Admin1}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-false}
+      DRONE_BACKEND: ${DRONE_BACKEND:-px4}
+      DRONE_API_URL: http://${DRONE_HOST:-drone}:9100
+      DRONE_WS_URL: ws://${DRONE_HOST:-drone}:9100/ws
+      DRONE_MAVLINK_PORT: "14540"
+      DRONE_COUNT: ${DRONE_COUNT:-1}
+      HOME_LAT: ${HOME_LAT:-43.9977991}
+      HOME_LON: ${HOME_LON:-25.0154851}
+      HOME_ALT: ${HOME_ALT:-95.0}
+      IDS_PUSH_TOKEN: ${IDS_PUSH_TOKEN:-ids-dev-token}
+      IDS_BUFFER_SIZE: ${IDS_BUFFER_SIZE:-500}
+      SENSOR_URL: ${SENSOR_URL:-http://sensor:9200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    ports:
+      - "8000:8000"           # REST + WebSocket API - the one boundary-crossing port
+      - "14540:14540/udp"     # MAVLink telemetry relay from drone (single instance)
